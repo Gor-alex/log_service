@@ -22,6 +22,7 @@ Web-сервис на Python (Flask, версия Python 2.7.13).
 
 БД SQLite:
 
+
 ·         logs.db - содержит таблицу logs (date real, event text) с обезличенными логами событий с участием некоторых людей. Поле event содержит описание события, где имена и фамилии людей обезличены и заменены на идентификаторы вида <p=1>.
 
 ·         people.db - содержит таблицу people (id integer, first_name text, last_name text, gender text) со справочником людей.
