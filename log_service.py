@@ -1,6 +1,8 @@
-# coding: utf-8
+# coding=utf-8
+# -*- coding: utf-8 -*-
 import re
-from flask import Flask, jsonify, request
+from flask import Flask, jsonify, request, abort
+from validators.logs import LogUrl
 # DB
 from sys_funcs.databases import DataBase
 # Models
@@ -84,48 +86,66 @@ def pack_log(_logs, names):
     return json
 
 
+def validation_url(view):
+    def valid_it():
+        # Instance schema
+        schema = LogUrl()
+        # Create field in request for valid values
+        request.validated = {}
+        # Valid items
+        try:
+            request.validated.update(
+                schema.deserialize(dict(request.args.items()))
+            )
+        except Exception as error:
+            abort(500, description=str(error))
+
+        return view()
+
+    return valid_it
+
+
 @app.route('/logs', methods=['GET'])
+@validation_url
 def view_logs():
     # DB connection(logs)
     logs_connection = DataBase(DataBase.DB_URLS[u'logs'])
     # Create new session
     l_session = logs_connection.new_session()
-    # Logs objects
+
+    # Main sql object
     sql_base_logs = l_session.query(Log)
+    if hasattr(request, 'validated'):
+        filters = request.validated.keys()
 
-    # Filters
-    filters = request.args.keys()
-    if u'from' in filters:
-        if float(request.args[u'from']) >= 0:
-            sql_base_logs = sql_base_logs\
-                .filter(Log.dt >= float(request.args[u'from']))
+        if u'from' in filters:
+            sql_base_logs = sql_base_logs.filter(Log.dt >= request.validated[u'from'])
 
-    if u'to' in filters:
-        if float(request.args[u'to']) >= 0:
-            sql_base_logs = sql_base_logs\
-                .filter(Log.dt <= float(request.args[u'to']))
+        if u'to' in filters:
+            sql_base_logs = sql_base_logs.filter(Log.dt <= request.validated[u'to'])
 
-    # Page and items
-    if (u'page' in filters) & (u'items' in filters):
-        page_number = int(request.args[u'page']) - 1 if int(request.args[u'page']) != 0 else 0
-        number_of_rows_per_page = int(request.args[u'items'])
-        if (page_number >= 0) & (number_of_rows_per_page >= 0):
-            sql_base_logs = sql_base_logs\
-                .slice(page_number*number_of_rows_per_page, (page_number*number_of_rows_per_page)+number_of_rows_per_page)
+        # Page and items
+        if (u'page' in filters) & (u'items' in filters):
+            # Pages starts from 1
+            page_number = request.validated[u'page'] - 1 if request.validated[u'page'] != 0 else 0
+            # items on page
+            items_on_page = request.validated[u'items']
+            # Add filter
+            sql_base_logs = sql_base_logs.slice(page_number*items_on_page, (page_number*items_on_page)+items_on_page)
 
-    elif u'items' in filters:
-        if int(request.args[u'items']) >= 0:
-            sql_base_logs = sql_base_logs\
-                .limit(int(request.args[u'items']))
+        elif u'items' in filters:
+            sql_base_logs = sql_base_logs.limit(request.validated[u'items'])
 
-    # Get logs from db
-    _logs = sql_base_logs.all()
-    # Pack log objects to json
-    json_log = pack_log(_logs, full_names_(_logs))
-    # Close opened session
-    l_session.close()
+        # Get logs from db
+        _logs = sql_base_logs.all()
+        # Pack log objects to json
+        json_log = pack_log(_logs, full_names_(_logs))
+        # Close opened session
+        l_session.close()
 
-    return jsonify(json_log)
+        return jsonify(json_log)
+    else:
+        abort(500, description='Not valid filters in url')
 
 
 if __name__ == '__main__':
